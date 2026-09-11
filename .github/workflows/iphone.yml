@@ -1,0 +1,264 @@
+name: iPhone 17 Simulator - Pinggy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  iphone:
+    runs-on: macos-26
+    timeout-minutes: 350
+
+    steps:
+
+      - name: Check Xcode
+        run: |
+          echo "=== XCODE ==="
+          xcodebuild -version
+
+          echo ""
+          echo "=== RUNTIMES ==="
+          xcrun simctl list runtimes
+
+          echo ""
+          echo "=== DEVICES ==="
+          xcrun simctl list devices available
+
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+
+      - name: Install serve-sim
+        run: |
+          npm install -g serve-sim@0.1.39
+
+          echo ""
+          echo "serve-sim installed successfully"
+
+
+      - name: Find iPhone 17
+        id: device
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import sys
+          import json
+
+          data = json.load(sys.stdin)
+
+          for runtime, devices in data["devices"].items():
+              for device in devices:
+                  if device["name"] == "iPhone 17":
+                      print(device["udid"])
+                      raise SystemExit
+          ')
+
+          if [ -z "$UDID" ]; then
+            echo "ERROR: iPhone 17 not found."
+            xcrun simctl list devices available
+            exit 1
+          fi
+
+          echo "Found iPhone 17: $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+
+      - name: Boot iPhone 17
+        run: |
+          UDID="${{ steps.device.outputs.udid }}"
+
+          echo "Booting iPhone 17..."
+
+          xcrun simctl boot "$UDID" || true
+
+          echo "Waiting for simulator..."
+
+          xcrun simctl bootstatus "$UDID" -b
+
+          echo ""
+          echo "================================"
+          echo "iPhone 17 is READY"
+          echo "================================"
+
+
+      - name: Start serve-sim
+        run: |
+          echo "Starting browser interface..."
+
+          nohup serve-sim \
+            "iPhone 17" \
+            --host 0.0.0.0 \
+            > /tmp/serve-sim.log 2>&1 &
+
+          echo $! > /tmp/serve-sim.pid
+
+          echo "Waiting for web interface..."
+
+          READY=false
+
+          for i in {1..60}; do
+            if curl -sf http://127.0.0.1:3200 >/dev/null; then
+              READY=true
+              break
+            fi
+
+            sleep 2
+          done
+
+          if [ "$READY" = false ]; then
+            echo "ERROR: serve-sim failed to start."
+            echo ""
+            echo "===== serve-sim LOG ====="
+            cat /tmp/serve-sim.log || true
+            exit 1
+          fi
+
+          echo ""
+          echo "================================"
+          echo "serve-sim is READY"
+          echo "================================"
+
+          cat /tmp/serve-sim.log || true
+
+
+      - name: Install Pinggy
+        run: |
+          echo "======================================"
+          echo "INSTALLING PINGGY"
+          echo "======================================"
+
+          brew install --cask pinggy 2>/dev/null || true
+
+          if command -v pinggy >/dev/null 2>&1; then
+            pinggy --version || true
+          else
+            echo "Pinggy binary not found."
+            echo "Trying npm package..."
+
+            npm install -g pinggy || true
+
+            command -v pinggy || true
+          fi
+
+
+      - name: Start Pinggy tunnel
+        run: |
+          echo "======================================"
+          echo "STARTING PINGGY"
+          echo "======================================"
+
+          nohup pinggy \
+            -p 443 \
+            -R0:localhost:3200 \
+            > /tmp/pinggy.log 2>&1 &
+
+          echo $! > /tmp/pinggy.pid
+
+          echo ""
+          echo "Waiting for Pinggy..."
+
+          URL=""
+
+          for i in {1..60}; do
+
+            echo "Attempt $i/60"
+
+            URL=$(grep -oE \
+              'https://[A-Za-z0-9._-]+\.pinggy\.link' \
+              /tmp/pinggy.log |
+              head -n 1 || true)
+
+            if [ -n "$URL" ]; then
+              break
+            fi
+
+            sleep 2
+          done
+
+          echo ""
+          echo "===== PINGGY LOG ====="
+          cat /tmp/pinggy.log || true
+
+          if [ -z "$URL" ]; then
+            echo ""
+            echo "ERROR: Could not find Pinggy public URL."
+            exit 1
+          fi
+
+          echo ""
+          echo "=============================================="
+          echo "        YOUR IPHONE 17 SIMULATOR"
+          echo "=============================================="
+          echo ""
+          echo "$URL"
+          echo ""
+          echo "OPEN THIS URL IN ANDROID CHROME"
+          echo ""
+          echo "=============================================="
+
+          {
+            echo "# 📱 iPhone 17 Simulator"
+            echo ""
+            echo "## Open this URL in Android Chrome"
+            echo ""
+            echo "$URL"
+            echo ""
+            echo "**Keep this workflow running.**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
+      - name: Keep simulator alive
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "          iPHONE 17 IS RUNNING"
+          echo "=============================================="
+          echo ""
+
+          while true; do
+
+            if ! xcrun simctl list devices | \
+              grep -q "${{ steps.device.outputs.udid }}.*Booted"; then
+
+              echo "Simulator stopped."
+              exit 1
+            fi
+
+            if ! kill -0 "$(cat /tmp/serve-sim.pid)" 2>/dev/null; then
+              echo "serve-sim stopped."
+              echo ""
+              cat /tmp/serve-sim.log || true
+              exit 1
+            fi
+
+            if ! kill -0 "$(cat /tmp/pinggy.pid)" 2>/dev/null; then
+              echo "Pinggy stopped."
+              echo ""
+              cat /tmp/pinggy.log || true
+              exit 1
+            fi
+
+            sleep 30
+          done
+
+
+      - name: Cleanup
+        if: always()
+        run: |
+
+          echo "Cleaning up..."
+
+          if [ -f /tmp/serve-sim.pid ]; then
+            kill "$(cat /tmp/serve-sim.pid)" 2>/dev/null || true
+          fi
+
+          if [ -f /tmp/pinggy.pid ]; then
+            kill "$(cat /tmp/pinggy.pid)" 2>/dev/null || true
+          fi
+
+          if [ -n "${{ steps.device.outputs.udid }}" ]; then
+            xcrun simctl shutdown \
+              "${{ steps.device.outputs.udid }}" \
+              2>/dev/null || true
+          fi
