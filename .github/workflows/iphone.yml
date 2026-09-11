@@ -27,7 +27,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
 
       - name: Install serve-sim
@@ -40,7 +40,8 @@ jobs:
         id: device
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c '
-          import sys, json
+          import sys
+          import json
 
           data = json.load(sys.stdin)
 
@@ -102,7 +103,6 @@ jobs:
             fi
 
             sleep 2
-
           done
 
           if [ "$READY" = false ]; then
@@ -121,17 +121,14 @@ jobs:
         run: |
           echo "Installing Pinggy..."
 
-          brew install --cask pinggy 2>/dev/null || true
+          npm install -g pinggy
 
-          if ! command -v pinggy >/dev/null 2>&1; then
-            echo "ERROR: Pinggy installation failed."
-            exit 1
-          fi
-
+          echo ""
+          echo "Pinggy installed:"
           pinggy --version || true
 
 
-      - name: Create Pinggy public URL
+      - name: Create Pinggy tunnel
         run: |
 
           echo "Starting Pinggy tunnel..."
@@ -143,7 +140,7 @@ jobs:
 
           echo $! > /tmp/pinggy.pid
 
-          echo "Waiting for Pinggy public URL..."
+          echo "Waiting for Pinggy..."
 
           URL=""
 
@@ -159,7 +156,6 @@ jobs:
             fi
 
             sleep 2
-
           done
 
           echo ""
@@ -168,13 +164,13 @@ jobs:
 
           if [ -z "$URL" ]; then
             echo ""
-            echo "ERROR: Pinggy tunnel failed."
+            echo "ERROR: Pinggy public URL was not found."
             exit 1
           fi
 
           echo ""
           echo "=============================================="
-          echo "          YOUR IPHONE 17 SIMULATOR"
+          echo "        YOUR IPHONE 17 SIMULATOR"
           echo "=============================================="
           echo ""
           echo "$URL"
@@ -183,18 +179,12 @@ jobs:
           echo ""
           echo "=============================================="
 
-          echo "# 📱 iPhone 17 Simulator - Pinggy" >> "$GITHUB_STEP_SUMMARY"
-
+          echo "# 📱 iPhone 17 Simulator" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-
-          echo "### Open this in Chrome on Android:" >> "$GITHUB_STEP_SUMMARY"
-
+          echo "### Open this URL in Android Chrome:" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-
           echo "$URL" >> "$GITHUB_STEP_SUMMARY"
-
           echo "" >> "$GITHUB_STEP_SUMMARY"
-
           echo "Keep this workflow running." >> "$GITHUB_STEP_SUMMARY"
 
 
@@ -218,7 +208,6 @@ jobs:
 
               echo "Simulator stopped."
               exit 1
-
             fi
 
             if [ -f /tmp/serve-sim.pid ]; then
@@ -238,7 +227,6 @@ jobs:
             fi
 
             sleep 30
-
           done
 
 
