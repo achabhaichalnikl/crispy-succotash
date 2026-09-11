@@ -12,15 +12,15 @@ jobs:
 
       - name: Check Xcode
         run: |
-          echo "=== XCODE ==="
+          echo "Xcode:"
           xcodebuild -version
 
           echo ""
-          echo "=== RUNTIMES ==="
+          echo "Available iOS runtimes:"
           xcrun simctl list runtimes
 
           echo ""
-          echo "=== DEVICES ==="
+          echo "Available devices:"
           xcrun simctl list devices available
 
 
@@ -32,16 +32,15 @@ jobs:
 
       - name: Install serve-sim
         run: |
-          npm install -g serve-sim@0.1.39
-          echo "serve-sim installed successfully"
+          npm install -g serve-sim
+          serve-sim --version
 
 
       - name: Find iPhone 17
         id: device
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c '
-          import sys
-          import json
+          import sys, json
 
           data = json.load(sys.stdin)
 
@@ -58,7 +57,9 @@ jobs:
             exit 1
           fi
 
-          echo "Found iPhone 17: $UDID"
+          echo "Found iPhone 17:"
+          echo "$UDID"
+
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
 
@@ -70,14 +71,12 @@ jobs:
 
           xcrun simctl boot "$UDID" || true
 
-          echo "Waiting for simulator..."
+          echo "Waiting for iPhone 17..."
 
           xcrun simctl bootstatus "$UDID" -b
 
           echo ""
-          echo "================================"
-          echo "iPhone 17 is READY"
-          echo "================================"
+          echo "iPhone 17 is READY."
 
 
       - name: Start serve-sim
@@ -85,7 +84,6 @@ jobs:
           echo "Starting browser interface..."
 
           nohup serve-sim \
-            "iPhone 17" \
             --host 0.0.0.0 \
             > /tmp/serve-sim.log 2>&1 &
 
@@ -96,59 +94,47 @@ jobs:
           READY=false
 
           for i in {1..60}; do
+
             if curl -sf http://127.0.0.1:3200 >/dev/null; then
               READY=true
+              echo "serve-sim is READY."
               break
             fi
 
             sleep 2
+
           done
 
           if [ "$READY" = false ]; then
             echo "ERROR: serve-sim failed to start."
             echo ""
-            echo "===== serve-sim LOG ====="
             cat /tmp/serve-sim.log || true
             exit 1
           fi
 
           echo ""
-          echo "================================"
-          echo "serve-sim is READY"
-          echo "================================"
-
+          echo "===== serve-sim log ====="
           cat /tmp/serve-sim.log || true
 
 
       - name: Install Pinggy
         run: |
-          echo "======================================"
-          echo "INSTALLING PINGGY"
-          echo "======================================"
+          echo "Installing Pinggy..."
 
           brew install --cask pinggy 2>/dev/null || true
 
-          if command -v pinggy >/dev/null 2>&1; then
-            echo "Pinggy found:"
-            pinggy --version || true
-          else
-            echo "Pinggy not found through Homebrew."
-            echo "Trying npm..."
-
-            npm install -g pinggy || true
-
-            if ! command -v pinggy >/dev/null 2>&1; then
-              echo "ERROR: Pinggy could not be installed."
-              exit 1
-            fi
+          if ! command -v pinggy >/dev/null 2>&1; then
+            echo "ERROR: Pinggy installation failed."
+            exit 1
           fi
 
+          pinggy --version || true
 
-      - name: Start Pinggy tunnel
+
+      - name: Create Pinggy public URL
         run: |
-          echo "======================================"
-          echo "STARTING PINGGY"
-          echo "======================================"
+
+          echo "Starting Pinggy tunnel..."
 
           nohup pinggy \
             -p 443 \
@@ -157,14 +143,11 @@ jobs:
 
           echo $! > /tmp/pinggy.pid
 
-          echo ""
-          echo "Waiting for Pinggy..."
+          echo "Waiting for Pinggy public URL..."
 
           URL=""
 
           for i in {1..60}; do
-
-            echo "Attempt $i/60"
 
             URL=$(grep -oE \
               'https://[^[:space:]]+\.(free\.pinggy\.net|run\.pinggy-free\.link)' \
@@ -176,6 +159,7 @@ jobs:
             fi
 
             sleep 2
+
           done
 
           echo ""
@@ -184,13 +168,13 @@ jobs:
 
           if [ -z "$URL" ]; then
             echo ""
-            echo "ERROR: Could not find Pinggy public URL."
+            echo "ERROR: Pinggy tunnel failed."
             exit 1
           fi
 
           echo ""
           echo "=============================================="
-          echo "        YOUR IPHONE 17 SIMULATOR"
+          echo "          YOUR IPHONE 17 SIMULATOR"
           echo "=============================================="
           echo ""
           echo "$URL"
@@ -199,23 +183,32 @@ jobs:
           echo ""
           echo "=============================================="
 
-          {
-            echo "# 📱 iPhone 17 Simulator"
-            echo ""
-            echo "## Open this URL in Android Chrome"
-            echo ""
-            echo "$URL"
-            echo ""
-            echo "**Keep this workflow running.**"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "# 📱 iPhone 17 Simulator - Pinggy" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "### Open this in Chrome on Android:" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "$URL" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Keep this workflow running." >> "$GITHUB_STEP_SUMMARY"
 
 
       - name: Keep simulator alive
         run: |
+
           echo ""
           echo "=============================================="
           echo "          IPHONE 17 IS RUNNING"
           echo "=============================================="
+          echo ""
+          echo "Open the Pinggy URL from the previous step."
+          echo ""
+          echo "DO NOT CANCEL THIS WORKFLOW."
           echo ""
 
           while true; do
@@ -225,12 +218,12 @@ jobs:
 
               echo "Simulator stopped."
               exit 1
+
             fi
 
             if [ -f /tmp/serve-sim.pid ]; then
               if ! kill -0 "$(cat /tmp/serve-sim.pid)" 2>/dev/null; then
                 echo "serve-sim stopped."
-                echo ""
                 cat /tmp/serve-sim.log || true
                 exit 1
               fi
@@ -239,20 +232,19 @@ jobs:
             if [ -f /tmp/pinggy.pid ]; then
               if ! kill -0 "$(cat /tmp/pinggy.pid)" 2>/dev/null; then
                 echo "Pinggy stopped."
-                echo ""
                 cat /tmp/pinggy.log || true
                 exit 1
               fi
             fi
 
             sleep 30
+
           done
 
 
       - name: Cleanup
         if: always()
         run: |
-          echo "Cleaning up..."
 
           if [ -f /tmp/serve-sim.pid ]; then
             kill "$(cat /tmp/serve-sim.pid)" 2>/dev/null || true
