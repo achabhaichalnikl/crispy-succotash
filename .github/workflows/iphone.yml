@@ -33,8 +33,6 @@ jobs:
       - name: Install serve-sim
         run: |
           npm install -g serve-sim@0.1.39
-
-          echo ""
           echo "serve-sim installed successfully"
 
 
@@ -131,14 +129,18 @@ jobs:
           brew install --cask pinggy 2>/dev/null || true
 
           if command -v pinggy >/dev/null 2>&1; then
+            echo "Pinggy found:"
             pinggy --version || true
           else
-            echo "Pinggy binary not found."
-            echo "Trying npm package..."
+            echo "Pinggy not found through Homebrew."
+            echo "Trying npm..."
 
             npm install -g pinggy || true
 
-            command -v pinggy || true
+            if ! command -v pinggy >/dev/null 2>&1; then
+              echo "ERROR: Pinggy could not be installed."
+              exit 1
+            fi
           fi
 
 
@@ -165,7 +167,7 @@ jobs:
             echo "Attempt $i/60"
 
             URL=$(grep -oE \
-              'https://[A-Za-z0-9._-]+\.pinggy\.link' \
+              'https://[^[:space:]]+\.(free\.pinggy\.net|run\.pinggy-free\.link)' \
               /tmp/pinggy.log |
               head -n 1 || true)
 
@@ -212,7 +214,7 @@ jobs:
         run: |
           echo ""
           echo "=============================================="
-          echo "          iPHONE 17 IS RUNNING"
+          echo "          IPHONE 17 IS RUNNING"
           echo "=============================================="
           echo ""
 
@@ -225,18 +227,22 @@ jobs:
               exit 1
             fi
 
-            if ! kill -0 "$(cat /tmp/serve-sim.pid)" 2>/dev/null; then
-              echo "serve-sim stopped."
-              echo ""
-              cat /tmp/serve-sim.log || true
-              exit 1
+            if [ -f /tmp/serve-sim.pid ]; then
+              if ! kill -0 "$(cat /tmp/serve-sim.pid)" 2>/dev/null; then
+                echo "serve-sim stopped."
+                echo ""
+                cat /tmp/serve-sim.log || true
+                exit 1
+              fi
             fi
 
-            if ! kill -0 "$(cat /tmp/pinggy.pid)" 2>/dev/null; then
-              echo "Pinggy stopped."
-              echo ""
-              cat /tmp/pinggy.log || true
-              exit 1
+            if [ -f /tmp/pinggy.pid ]; then
+              if ! kill -0 "$(cat /tmp/pinggy.pid)" 2>/dev/null; then
+                echo "Pinggy stopped."
+                echo ""
+                cat /tmp/pinggy.log || true
+                exit 1
+              fi
             fi
 
             sleep 30
@@ -246,7 +252,6 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-
           echo "Cleaning up..."
 
           if [ -f /tmp/serve-sim.pid ]; then
